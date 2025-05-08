@@ -1,8 +1,8 @@
 import pandas as pd
 import numpy as np
 
-from nn_forecast.utils.logging_custom import get_logger
-from nn_forecast.consts import dirs
+from utils.logging_custom import get_logger
+from consts import dirs
 
 
 class DataHandler:
