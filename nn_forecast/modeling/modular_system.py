@@ -8,8 +8,8 @@ import matplotlib.pyplot as plt
 import pandas as pd
 import numpy as np
 
-from nn_forecast.utils.logging_custom import get_logger
-from nn_forecast.consts import dirs
+from utils.logging_custom import get_logger
+from consts import dirs
 
 class ModularSystem:
     def __init__(self,df)-> None:
@@ -25,6 +25,7 @@ class ModularSystem:
         y = self.df['total_load'].copy()
         return X, y
 
+    @staticmethod
     def split_data(X, y):
         X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2)
         return X_train, X_test, y_train, y_test
@@ -74,18 +75,18 @@ class ModularSystem:
             days_test = days_hour[len(X_train):]
 
             models[hour] = Sequential([
-                Dense(25, activation='sigmoid', input_dim=X_hour.shape[1]),  # zwraca nam liczbe cech czyli 16
+                Dense(50, activation='sigmoid', input_dim=X_hour.shape[1]),  # zwraca nam liczbe cech czyli 16
                 Dense(1, activation='linear')
             ])
             print(f"Dla godziny: {hour}")
             optimizer = keras.optimizers.SGD(learning_rate=0.001)
             models[hour].compile(optimizer=optimizer, loss='mse', metrics=['mape'])
-            models[hour].fit(X_train, y_train, epochs=20, batch_size=32, validation_split=0.2, verbose=1)
+            models[hour].fit(X_train, y_train, epochs=100, batch_size=32, validation_split=0.2, verbose=1)
             y_pred = models[hour].predict(X_test)
 
             vector.append(f"{y_pred[0][0]:.2f}")
             mape = mean_absolute_percentage_error(y_test, y_pred)
-            mape_vec.append(f'{mape * 100:.2f}')
+            mape_vec.append(float(f'{mape * 100:.2f}'))
             print(f'MAPE: {mape * 100:.2f}%')
 
             for i in range(len(y_test)):
@@ -103,6 +104,7 @@ class ModularSystem:
 
         for i in range(len(vector)):
             print(f"Load for {i} hour:", vector[i], "MAPE:", mape_vec[i])
+        print(f"Mean mape: {np.mean(mape_vec):.2f}%")
         results_df = pd.DataFrame(results)
 
         return results_df
