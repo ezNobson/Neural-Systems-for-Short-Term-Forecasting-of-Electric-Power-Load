@@ -8,13 +8,14 @@ import matplotlib.pyplot as plt
 import pandas as pd
 import numpy as np
 
-from nn_forecast.utils.logging_custom import get_logger
-from nn_forecast.consts import dirs
+from utils.logging_custom import get_logger
+from consts import dirs
 
 class SinglePerceptron:
     def __init__(self, df) -> None:
         self.logger = get_logger(self.__class__.__name__)
         self.df = df
+        dirs.VISUALIZATION_PERCEPTRON.mkdir(parents=True, exist_ok=True)
     def x_y(self, df):
         X = df[['load-1', 'load-2', 'load-3', 'load-22', 'load-23', 'load-24', 'load-25', 'load-26', 'mean_t_3',
                 'mean_t_5',
@@ -26,13 +27,14 @@ class SinglePerceptron:
 
         y = df[lista]
         return X, y
-
+    @staticmethod
     def split_data(X, y):
         X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2)
         return X_train, X_test, y_train, y_test
 
-    def network(df):
-        X, y = x_y(df)
+    def network(self):
+        df = self.df
+        X, y = self.x_y(df)
         # normalizacja
         other_scaler = MinMaxScaler(feature_range=(0, 1))
         temp_scaler = MinMaxScaler(feature_range=(-1, 1))
@@ -47,7 +49,7 @@ class SinglePerceptron:
         y = np.array(y)
         day_df = np.array(df['day_of_week_num'])
         # podzial danych
-        X_train, X_test, y_train, y_test = split_data(X, y)
+        X_train, X_test, y_train, y_test = self.split_data(X, y)
         day_train, day_test = train_test_split(day_df, test_size=0.2)
 
         model = Sequential([
@@ -90,8 +92,11 @@ class SinglePerceptron:
 
         plt.plot(y_test[3, :], label='Rzeczywiste')
         plt.plot(y_pred[3, :], label='Przewidywane')
+        plt.title("Porównanie predykcji do rzeczywistych wartości w jednym dniu")
 
-        return y_pred, y_test
+        output = dirs.VISUALIZATION_PERCEPTRON / f"Perceptron.png"
+        plt.savefig(output)
+
 
 
 
