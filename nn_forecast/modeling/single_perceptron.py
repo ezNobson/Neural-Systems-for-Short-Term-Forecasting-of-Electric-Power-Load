@@ -27,12 +27,13 @@ class SinglePerceptron:
         y = df[lista]
         return X, y
 
+    @staticmethod
     def split_data(X, y):
         X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2)
         return X_train, X_test, y_train, y_test
 
-    def network(df):
-        X, y = x_y(df)
+    def network(self,df):
+        X, y = self.x_y(df)
         # normalizacja
         other_scaler = MinMaxScaler(feature_range=(0, 1))
         temp_scaler = MinMaxScaler(feature_range=(-1, 1))
@@ -47,7 +48,7 @@ class SinglePerceptron:
         y = np.array(y)
         day_df = np.array(df['day_of_week_num'])
         # podzial danych
-        X_train, X_test, y_train, y_test = split_data(X, y)
+        X_train, X_test, y_train, y_test = self.split_data(X, y)
         day_train, day_test = train_test_split(day_df, test_size=0.2)
 
         model = Sequential([

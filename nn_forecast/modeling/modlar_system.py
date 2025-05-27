@@ -8,6 +8,7 @@ import matplotlib.pyplot as plt
 import pandas as pd
 import numpy as np
 
+from nn_forecast.consts.dirs import DATA_PATH
 from nn_forecast.utils.logging_custom import get_logger
 from nn_forecast.consts import dirs
 
@@ -17,105 +18,103 @@ class ModularSystem:
         self.df = df
 
     def prepare_data(self):
-        features = ['load-1', 'load-2', 'load-3', 'load-22', 'load-23', 'load-24', 'load-25', 'load-26',
-                    'mean_t_3', 'mean_t_5',
-                    'day_of_week_sin', 'day_of_week_cos',
-                    'day_of_year_sin', 'day_of_year_cos']
-        X = self.df[features].copy()
-        y = self.df['total_load'].copy()
-        return X, y
+        X = self.df[['load-1', 'load-2', 'load-3', 'load-22', 'load-23', 'load-24', 'load-25', 'load-26', 'mean_t_3',
+                'mean_t_5',
+                'day_of_week_sin', 'day_of_week_cos', 'hour_sin', 'hour_cos', 'day_of_year_sin', 'day_of_year_cos']]
 
+        lista = []
+        lista.append('total_load')
+        for i in range(1, 24):
+            lista.append(f'next_load_{i}')
+
+        y = self.df[lista]
+        return X, y
+    @staticmethod
     def split_data(X, y):
-        X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2)
+        X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, shuffle=False)
         return X_train, X_test, y_train, y_test
 
-    def modular_network(self):
+    def modular_network(self,epochs =20, Neurons=25):
         X, y = self.prepare_data()
-
-        # Normalization
         other_scaler = MinMaxScaler(feature_range=(0, 1))
         temp_scaler = MinMaxScaler(feature_range=(-1, 1))
         for temp in [f'mean_t_{t}' for t in [3, 5]]:
             X[temp] = temp_scaler.fit_transform(X[[temp]])
-
         for col in [f'load-{t}' for t in [1, 2, 3, 22, 23, 24, 25, 26]]:
             X[col] = other_scaler.fit_transform(X[[col]])
-
         X = np.array(X)
         y = np.array(y)
 
-        models = {}
-        results = []
-        vector = []
-        mape_vec = []
-        temp = []
-        y_t = []
+        X_train, X_test, y_train_all, y_test_all = self.split_data(X, y)
 
-        hours = self.df['hour'].values
-        days = self.df['date'].values
-        starting_hour = np.where(hours == 11)[0][0]
-
-        L_i_1 = X[starting_hour][0]
-        L_i_2 = X[starting_hour][1]
-        L_i_3 = X[starting_hour][2]
-
+        y_preds = []
         for hour in range(24):
-            filter = hours == hour
-            X_hour = X[filter].copy()
-            y_hour = y[filter]
-            days_hour = days[filter]
+            y_train = y_train_all[:, hour]
+            y_test = y_test_all[:, hour]
 
-            X_hour[hour][0] = L_i_1
-            X_hour[hour][1] = L_i_2
-            X_hour[hour][2] = L_i_3
-
-            X_train, X_test, y_train, y_test = self.split_data(X_hour, y_hour)
-
-            days_test = days_hour[len(X_train):]
-
-            models[hour] = Sequential([
-                Dense(25, activation='sigmoid', input_dim=X_hour.shape[1]),  # zwraca nam liczbe cech czyli 16
+            model = Sequential([
+                Dense(Neurons, activation='sigmoid', input_dim=X.shape[1]),
                 Dense(1, activation='linear')
             ])
-            print(f"Dla godziny: {hour}")
             optimizer = keras.optimizers.SGD(learning_rate=0.001)
-            models[hour].compile(optimizer=optimizer, loss='mse', metrics=['mape'])
-            models[hour].fit(X_train, y_train, epochs=20, batch_size=32, validation_split=0.2, verbose=1)
-            y_pred = models[hour].predict(X_test)
+            model.compile(optimizer=optimizer, loss='mse', metrics=['mape'])
+            print(f"Dla godizny: {hour}")
+            model.fit(X_train, y_train, epochs=epochs, batch_size=32, validation_split=0.2, verbose=1)
+            y_pred = model.predict(X_test).flatten()
+            y_preds.append(y_pred)
 
-            vector.append(f"{y_pred[0][0]:.2f}")
-            mape = mean_absolute_percentage_error(y_test, y_pred)
-            mape_vec.append(f'{mape * 100:.2f}')
-            print(f'MAPE: {mape * 100:.2f}%')
+        y_preds_matrix = np.column_stack(y_preds)
 
-            for i in range(len(y_test)):
-                results.append({
-                    'date': days_test[i],
-                    'hour': hour,
-                    'y_true': y_test[i],
-                    'y_pred': y_pred[i][0],
-                    'mape': abs((y_test[i] - y_pred[i][0]) / y_test[i]) * 100
-                })
+        dates = self.df['time'].values
+        _, dates_test = train_test_split(dates, test_size=0.2, shuffle=False)
+        result_df = pd.DataFrame({'date': dates_test})
+        for i in range(24):
+            result_df[f'y_real_{i}'] = y_test_all[:, i]
+            result_df[f'y_pred_{i}'] = y_preds_matrix[:, i]
 
-            L_i_3 = L_i_2
-            L_i_2 = L_i_1
-            L_i_1 = y_pred[0][0]
+        for i in range(24):
+            result_df[f'mape_{i}'] = np.abs(result_df[f'y_real_{i}'] - result_df[f'y_pred_{i}']) / result_df[
+                f'y_real_{i}'] * 100
 
-        for i in range(len(vector)):
-            print(f"Load for {i} hour:", vector[i], "MAPE:", mape_vec[i])
-        results_df = pd.DataFrame(results)
+        result_df['mape_mean'] = result_df[[f'mape_{i}' for i in range(24)]].mean(axis=1)
+        mape_per_hour = result_df[[f'mape_{i}' for i in range(24)]].mean(axis=0)
+        for i, mape_hour in enumerate(mape_per_hour):
+            print(f"Średnia MAPE dla godziny {i}: {mape_hour:.2f}%")
 
-        return results_df
+        result_df.to_csv(dirs.DATA_PATH/"modular_results.csv", index=False)
+        return result_df
     @staticmethod
-    def print_result(result_df, day):
+    def print_result(result_df, start_datetime):
         results = result_df.copy()
         results['date'] = pd.to_datetime(results['date'])
-        day_data = results[results['date'] == day]
+        start_datetime = pd.to_datetime(start_datetime)
+
+        # Wiersz z predykcjami (dla startowej godziny)
+        pred_row = results[results['date'] == start_datetime]
+        if pred_row.empty:
+            print(f"Brak predykcji dla {start_datetime}")
+            return
+
+        # Rzeczywiste wartości z kolejnych 24 godzin
+        mask = (results['date'] >= start_datetime) & (results['date'] < start_datetime + pd.Timedelta(hours=24))
+        real_rows = results[mask]
+        if len(real_rows) < 24:
+            print(f"Brak wystarczających danych rzeczywistych od {start_datetime} (znaleziono {len(real_rows)})")
+            return
+
+        y_true = real_rows['y_real_0'].values[:24]
+        y_pred = [pred_row[f'y_pred_{i}'].values[0] for i in range(24)]
+        hours = list(range(24))
+
+        mape_val = pred_row['mape_mean'].values[0]
+        print(f"MAPE (średnia z 24h) dla {start_datetime}: {mape_val:.2f}%")
+
         plt.figure(figsize=(12, 6))
-        plt.plot(day_data['hour'], day_data['y_true'], label='Rzeczywiste')
-        plt.plot(day_data['hour'], day_data['y_pred'], label='Predykcje')
-        plt.title(f'Predykcje vs Rzeczywiste dla dnia {day}')
-        plt.xlabel('Godzina')
+        plt.plot(hours, y_true, label='Rzeczywiste')
+        plt.plot(hours, y_pred, label='Predykcje')
+        plt.title(f'Predykcje vs Rzeczywiste od {start_datetime}')
+        plt.suptitle(f"MAPE (średnia z 24h): {mape_val:.2f}%", fontsize=12, y=0.94)
+        plt.xlabel('Godzina od startu')
         plt.ylabel('Obciążenie')
         plt.legend()
         plt.grid(True)
