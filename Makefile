@@ -4,7 +4,8 @@ VENV_NAME=nn_forecast
 
 install:
 	python -m venv $(VENV_NAME)
-	. $(VENV_NAME)/bin/activate && pip install --upgrade pip && pip install -r requirements.txt
+	$(VENV_NAME)\Scripts\pip.exe install --upgrade pip
+	$(VENV_NAME)\Scripts\pip.exe install -r requirements.txt
 
 clean:
 	rm -rf $(VENV_NAME)
