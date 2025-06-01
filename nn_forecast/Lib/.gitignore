@@ -1,0 +1,12 @@
+Lib/
+lib/
+*.dll
+*.pyd
+*.so
+*.whl
+*.egg
+*.pyc
+__pycache__/
+site-packages/
+nn_forecast/Lib/
+nn_forecast/Lib/site-packages/

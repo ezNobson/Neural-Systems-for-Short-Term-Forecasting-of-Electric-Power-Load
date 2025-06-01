@@ -12,12 +12,11 @@ from nn_forecast.consts.dirs import DATA_PATH
 from nn_forecast.utils.logging_custom import get_logger
 from nn_forecast.consts import dirs
 
-class ModularSystem:
-    def __init__(self,df)-> None:
+class CommiteeSystem:
+    def __init__(self,df):
         self.logger = get_logger(self.__class__.__name__)
         self.df = df
-        dirs.VISUALIZATION_MODULAR.mkdir(parents=True, exist_ok=True)
-
+        dirs.VISUALIZATION_COMMITEE.mkdir(parents=True, exist_ok=True)
     def prepare_data(self):
         X = self.df[['load-1', 'load-2', 'load-3', 'load-22', 'load-23', 'load-24', 'load-25', 'load-26', 'mean_t_3',
                 'mean_t_5',
@@ -34,8 +33,9 @@ class ModularSystem:
     def split_data(X, y):
         X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, shuffle=False)
         return X_train, X_test, y_train, y_test
+    def commitee_network(self,epochs =20, Neurons=25, K=5):
 
-    def modular_network(self,epochs =20, Neurons=25):
+
         X, y = self.prepare_data()
         other_scaler = MinMaxScaler(feature_range=(0, 1))
         temp_scaler = MinMaxScaler(feature_range=(-1, 1))
@@ -48,44 +48,49 @@ class ModularSystem:
 
         X_train, X_test, y_train_all, y_test_all = self.split_data(X, y)
 
-        y_preds = []
-        for hour in range(24):
-            y_train = y_train_all[:, hour]
-            y_test = y_test_all[:, hour]
 
-            model = Sequential([
-                Dense(Neurons, activation='sigmoid', input_dim=X.shape[1]),
-                Dense(1, activation='linear')
-            ])
-            optimizer = keras.optimizers.SGD(learning_rate=0.001)
-            model.compile(optimizer=optimizer, loss='mse', metrics=['mape'])
-            print(f"Dla godizny: {hour}")
-            model.fit(X_train, y_train, epochs=epochs, batch_size=32, validation_split=0.2, verbose=1)
-            y_pred = model.predict(X_test).flatten()
-            y_preds.append(y_pred)
+        commitee_preds = {hour: [] for hour in range(24)}
 
-        y_preds_matrix = np.column_stack(y_preds)
+        for k in range(K):
+            for hour in range(24):
+                y_train = y_train_all[:, hour]
+                y_test = y_test_all[:, hour]
 
+                model = Sequential([
+                    Dense(Neurons, activation='sigmoid', input_dim=X.shape[1]),
+                    Dense(1, activation='linear')
+                ])
+                optimizer = keras.optimizers.SGD(learning_rate=0.001)
+                model.compile(optimizer=optimizer, loss='mse', metrics=['mape'])
+                print(f"Dla godizny: {hour}, komitet: {k+1}")
+                model.fit(X_train, y_train, epochs=epochs, batch_size=32, validation_split=0.2, verbose=1)
+                y_pred = model.predict(X_test).flatten()
+
+                commitee_preds[hour].append(y_pred)
+
+        y_preds_matrix = np.column_stack([
+            np.mean(np.stack(commitee_preds[hour], axis=1), axis=1) for hour in range(24)
+        ])
         dates = self.df['time'].values
         _, dates_test = train_test_split(dates, test_size=0.2, shuffle=False)
         result_df = pd.DataFrame({'date': dates_test})
+
         for i in range(24):
             result_df[f'y_real_{i}'] = y_test_all[:, i]
             result_df[f'y_pred_{i}'] = y_preds_matrix[:, i]
-
-        for i in range(24):
             result_df[f'mape_{i}'] = np.abs(result_df[f'y_real_{i}'] - result_df[f'y_pred_{i}']) / result_df[
                 f'y_real_{i}'] * 100
 
         result_df['mape_mean'] = result_df[[f'mape_{i}' for i in range(24)]].mean(axis=1)
         mape_per_hour = result_df[[f'mape_{i}' for i in range(24)]].mean(axis=0)
         for i, mape_hour in enumerate(mape_per_hour):
-            print(f"Średnia MAPE dla godziny {i}: {mape_hour:.2f}%")
+            print(f"Średnia MAPE (committee) dla godziny {i}: {mape_hour:.2f}%")
 
-        result_df.to_csv(dirs.DATA_PATH/"modular_results.csv", index=False)
+        result_df.to_csv(dirs.DATA_PATH / "committee_results.csv", index=False)
         return result_df
+
     @staticmethod
-    def print_result(result_df, start_datetime, if_save = False):
+    def print_result(result_df, start_datetime, if_save=False,epochs=None, neurons = None):
         results = result_df.copy()
         results['date'] = pd.to_datetime(results['date'])
         start_datetime = pd.to_datetime(start_datetime)
@@ -113,7 +118,17 @@ class ModularSystem:
         plt.figure(figsize=(12, 6))
         plt.plot(hours, y_true, label='Rzeczywiste')
         plt.plot(hours, y_pred, label='Predykcje')
-        plt.title(f'Predykcje vs Rzeczywiste od {start_datetime}')
+
+
+        title = f'Predykcje vs Rzeczywiste od {start_datetime}'
+        if epochs is not None and neurons is not None:
+            title += f' (epochs={epochs}, neurons={neurons})'
+        elif epochs is not None:
+            title += f' (epochs={epochs})'
+        elif neurons is not None:
+            title += f' (neurons={neurons})'
+
+        plt.title(title)
         plt.suptitle(f"MAPE (średnia z 24h): {mape_val:.2f}%", fontsize=12, y=0.94)
         plt.xlabel('Godzina od startu')
         plt.ylabel('Obciążenie')
@@ -122,5 +137,5 @@ class ModularSystem:
         if if_save:
             start_datetime_safe = str(start_datetime).replace(':', '-').replace(' ', '_')
 
-            plt.savefig(dirs.VISUALIZATION_MODULAR / f"modular_results_{start_datetime_safe}.png" )
+            plt.savefig(dirs.VISUALIZATION_COMMITEE / f"commitee_results_{start_datetime_safe}.png")
         plt.show()
